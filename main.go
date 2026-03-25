@@ -37,7 +37,7 @@ func main() {
 	}
 
 	apiClient := &clkup.APIClient{
-		Client:  &http.Client{Timeout: 10 * time.Second},
+		Client:  &http.Client{Timeout: 30 * time.Second},
 		Token:   token,
 		Limiter: rate.NewLimiter(rate.Inf, 1),
 	}

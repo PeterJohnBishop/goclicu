@@ -13,22 +13,22 @@ import (
 	"time"
 )
 
-// func calculatePerformance(totalTasks int, start time.Time) Performance {
-// 	elapsed := time.Since(start)
-// 	pages := float64(totalTasks) / 100.0
-// 	if pages < 1 {
-// 		pages = 1
-// 	}
+func CalculatePerformance(totalTasks int, start time.Time) Performance {
+	elapsed := time.Since(start)
+	pages := float64(totalTasks) / 100.0
+	if pages < 1 {
+		pages = 1
+	}
 
-// 	rpm := (pages / elapsed.Minutes())
-// 	tps := float64(totalTasks) / elapsed.Seconds()
+	rpm := (pages / elapsed.Minutes())
+	tps := float64(totalTasks) / elapsed.Seconds()
 
-// 	return Performance{
-// 		Duration: elapsed.Round(time.Millisecond).String(),
-// 		RPM:      fmt.Sprintf("%.2f", rpm),
-// 		TPS:      fmt.Sprintf("%.2f", tps),
-// 	}
-// }
+	return Performance{
+		Duration: elapsed.Round(time.Millisecond).String(),
+		RPM:      fmt.Sprintf("%.2f", rpm),
+		TPS:      fmt.Sprintf("%.2f", tps),
+	}
+}
 
 // OAUTH
 
@@ -151,6 +151,13 @@ func (c *APIClient) GetAuthorizedWorkspaces() ([]Workspace, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("API request failed with status: %d", resp.StatusCode)
 	}
+
+	// bodyBytes, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// os.WriteFile("clickup_debug.json", bodyBytes, 0644)
 
 	var teamsResponse TeamsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&teamsResponse); err != nil {

@@ -69,10 +69,11 @@ type PlanLoadedMsg struct {
 	PlanID int
 }
 type FanOutCompleteMsg struct {
-	Spaces  []clkup.Space
-	Folders []clkup.Folder
-	Lists   []clkup.List
-	Tasks   []clkup.Task
+	Spaces      []clkup.Space
+	Folders     []clkup.Folder
+	Lists       []clkup.List
+	Tasks       []clkup.Task
+	Performance clkup.Performance
 }
 type ErrMsg struct{ err error }
 
@@ -106,6 +107,8 @@ type dashboardModel struct {
 	folders    []clkup.Folder
 	lists      []clkup.List
 	tasks      []clkup.Task
+
+	perf clkup.Performance
 }
 
 func InitialModel(client *clkup.APIClient) dashboardModel {
@@ -249,12 +252,11 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Append the new log
 		m.logs = append(m.logs, string(msg))
 
-		// Keep only the last 8 lines so it fits nicely in the bottom pane
 		if len(m.logs) > 8 {
 			m.logs = m.logs[1:]
 		}
 
-		// VERY IMPORTANT: Call the command again to wait for the next log
+		//call the command again to wait for the next log
 		return m, waitForLog(m.logChan)
 
 	case FanOutCompleteMsg:
@@ -262,8 +264,9 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.folders = msg.Folders
 		m.lists = msg.Lists
 		m.tasks = msg.Tasks
+		m.perf = msg.Performance
 
-		// --- Build the Tasks Table ---
+		// tasks table
 		columns := []table.Column{
 			{Title: "Task ID", Width: 12},
 			{Title: "Status", Width: 15},
@@ -296,7 +299,7 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.taskTable.SetStyles(s)
 
 		m.state = stateLoaded
-		m.focusTable = true // Automatically drop them into the table upon load
+		m.focusTable = true
 		return m, nil
 
 	case ErrMsg:
@@ -312,6 +315,30 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m dashboardModel) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("Error: %v\nPress 'q' to quit.", m.err)
+	}
+
+	var header string
+	if m.state != stateInit {
+		headerStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E0AAFF")).
+			Padding(0, 1).
+			MarginBottom(1).
+			Italic(true)
+
+		leftSide := fmt.Sprintf("%s | %s - %s", m.user.ID, m.user.Initials, m.user.Email)
+		rightSide := fmt.Sprintf("[ %s ]", m.user.Timezone)
+
+		spaceCount := m.width - lipgloss.Width(leftSide) - lipgloss.Width(rightSide) - 4
+
+		var headerContent string
+		if spaceCount > 0 {
+			spacer := strings.Repeat(" ", spaceCount)
+			headerContent = leftSide + spacer + rightSide
+		} else {
+			headerContent = leftSide + " " + rightSide
+		}
+
+		header = headerStyle.Render(headerContent)
 	}
 
 	// left pane
@@ -340,6 +367,7 @@ func (m dashboardModel) View() string {
 			menuItems = append(menuItems, fmt.Sprintf("%s%s", cursor, style.Render(w.Name)))
 		}
 	}
+
 	leftPane := menuStyle.Render(strings.Join(menuItems, "\n"))
 
 	// right pane
@@ -401,7 +429,24 @@ func (m dashboardModel) View() string {
 	// combine layout
 	topPanes := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 
-	return baseStyle.Render(lipgloss.JoinVertical(lipgloss.Left, topPanes, bottomPane))
+	finalView := lipgloss.JoinVertical(lipgloss.Left, header, topPanes, bottomPane)
+
+	if m.state == stateLoaded {
+		perfStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E0AAFF")).
+			Padding(0, 1).
+			MarginTop(1).
+			Italic(true)
+
+		perfText := fmt.Sprintf("Fetch completed in %s | Tasks Per Second: %s | Est. RPM: %s",
+			m.perf.Duration, m.perf.TPS, m.perf.RPM)
+
+		footer := perfStyle.Render(perfText)
+		finalView = lipgloss.JoinVertical(lipgloss.Left, finalView, footer)
+	}
+
+	return baseStyle.Render(finalView)
+
 }
 
 func fetchPlanCmd(client *clkup.APIClient, teamID string) tea.Cmd {
@@ -419,14 +464,34 @@ func fetchPlanCmd(client *clkup.APIClient, teamID string) tea.Cmd {
 
 func fetchInitDataCmd(client *clkup.APIClient) tea.Cmd {
 	return func() tea.Msg {
-		user, err := client.GetAuthorizedUser()
+		var user clkup.User
+		var workspaces []clkup.Workspace
+		var err error
+
+		for attempts := 0; attempts < 3; attempts++ {
+			user, err = client.GetAuthorizedUser()
+			if err == nil {
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
 		if err != nil {
-			return ErrMsg{err}
+			return ErrMsg{fmt.Errorf("failed to fetch user after 3 attempts: %w", err)}
 		}
 
-		workspaces, err := client.GetAuthorizedWorkspaces()
-		if err != nil || len(workspaces) == 0 {
-			return ErrMsg{fmt.Errorf("no workspaces found")}
+		for attempts := 0; attempts < 3; attempts++ {
+			workspaces, err = client.GetAuthorizedWorkspaces()
+			if err == nil {
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
+		if err != nil {
+			return ErrMsg{fmt.Errorf("workspace API error after 3 attempts: %w", err)}
+		}
+
+		if len(workspaces) == 0 {
+			return ErrMsg{fmt.Errorf("success, but workspace array was empty")}
 		}
 
 		return InitDataMsg{
@@ -435,14 +500,12 @@ func fetchInitDataCmd(client *clkup.APIClient) tea.Cmd {
 		}
 	}
 }
-
 func fetchHierarchyCmd(client *clkup.APIClient, teamID string) tea.Cmd {
 	return func() tea.Msg {
+		start := time.Now()
 		var g errgroup.Group
-
 		var mu sync.Mutex
 		var finalLists []clkup.List
-
 		var finalSpaces []clkup.Space
 		var finalFolders []clkup.Folder
 		var finalTasks []clkup.Task
@@ -520,11 +583,14 @@ func fetchHierarchyCmd(client *clkup.APIClient, teamID string) tea.Cmd {
 			return ErrMsg{err}
 		}
 
+		perf := clkup.CalculatePerformance(len(finalTasks), start)
+
 		return FanOutCompleteMsg{
-			Spaces:  finalSpaces,
-			Folders: finalFolders,
-			Lists:   finalLists,
-			Tasks:   finalTasks,
+			Spaces:      finalSpaces,
+			Folders:     finalFolders,
+			Lists:       finalLists,
+			Tasks:       finalTasks,
+			Performance: perf,
 		}
 	}
 }
