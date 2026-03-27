@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"super-duper-fortnight/clkup"
+	"super-duper-fortnight/dbstore"
 	"sync"
 	"time"
 
@@ -62,7 +63,7 @@ func fetchInitDataCmd(client *clkup.APIClient) tea.Cmd {
 	}
 }
 
-func fetchHierarchyCmd(client *clkup.APIClient, teamID string) tea.Cmd {
+func fetchHierarchyCmd(client *clkup.APIClient, db *dbstore.DB, teamID string) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
 		var g errgroup.Group
@@ -70,9 +71,8 @@ func fetchHierarchyCmd(client *clkup.APIClient, teamID string) tea.Cmd {
 
 		var finalSpaces []clkup.Space
 		var finalTasks []clkup.Task
-		foldersBySpace := make(map[string][]clkup.Folder)
-		listsByFolder := make(map[string][]clkup.List)
-		listsBySpace := make(map[string][]clkup.List)
+		var finalFolders []clkup.Folder
+		var finalLists []clkup.List
 
 		g.Go(func() error {
 			tasks, err := client.GetAllTasks(teamID)
@@ -91,7 +91,7 @@ func fetchHierarchyCmd(client *clkup.APIClient, teamID string) tea.Cmd {
 			}
 
 			mu.Lock()
-			finalSpaces = spaces
+			finalSpaces = append(finalSpaces, spaces...)
 			mu.Unlock()
 
 			for _, space := range spaces {
@@ -104,7 +104,7 @@ func fetchHierarchyCmd(client *clkup.APIClient, teamID string) tea.Cmd {
 					}
 
 					mu.Lock()
-					foldersBySpace[sID] = folders
+					finalFolders = append(finalFolders, folders...)
 					mu.Unlock()
 
 					for _, folder := range folders {
@@ -116,7 +116,7 @@ func fetchHierarchyCmd(client *clkup.APIClient, teamID string) tea.Cmd {
 							}
 
 							mu.Lock()
-							listsByFolder[fID] = lists
+							finalLists = append(finalLists, lists...)
 							mu.Unlock()
 							return nil
 						})
@@ -131,42 +131,31 @@ func fetchHierarchyCmd(client *clkup.APIClient, teamID string) tea.Cmd {
 					}
 
 					mu.Lock()
-					listsBySpace[sID] = folderlessLists
+					finalLists = append(finalLists, folderlessLists...)
 					mu.Unlock()
 					return nil
 				})
 			}
-
 			return nil
 		})
 
+		// Wait for all API calls to finish
 		if err := g.Wait(); err != nil {
 			return ErrMsg{err}
 		}
-
-		tasksByList := make(map[string][]clkup.Task)
-		for _, t := range finalTasks {
-			lID := getListIDFromTask(t)
-			if lID != "" {
-				tasksByList[lID] = append(tasksByList[lID], t)
-			}
+		// save in SQLite
+		err := db.SyncWorkspaceData(teamID, finalSpaces, finalFolders, finalLists, finalTasks)
+		if err != nil {
+			return ErrMsg{fmt.Errorf("database sync failed: %w", err)}
 		}
+		// ------------------------------
 
 		perf := clkup.CalculatePerformance(len(finalTasks), start)
 
-		wd := &WorkspaceData{
-			Spaces:         finalSpaces,
-			FoldersBySpace: foldersBySpace,
-			ListsByFolder:  listsByFolder,
-			ListsBySpace:   listsBySpace,
-			Tasks:          finalTasks,
-			TasksByList:    tasksByList,
-			Performance:    perf,
-		}
-
+		// Return a beautifully lightweight message
 		return FanOutCompleteMsg{
-			TeamID: teamID,
-			Data:   wd,
+			TeamID:      teamID,
+			Performance: perf,
 		}
 	}
 }

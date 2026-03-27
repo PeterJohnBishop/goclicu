@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"super-duper-fortnight/clkup"
+	"super-duper-fortnight/dbstore"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -55,6 +56,7 @@ const (
 // model
 type dashboardModel struct {
 	apiClient *clkup.APIClient
+	db        *dbstore.DB
 	spinner   spinner.Model
 	logChan   chan string
 	logs      []string
@@ -80,12 +82,12 @@ type dashboardModel struct {
 	taskScrollOffset int
 
 	// Data Store
-	user           clkup.User
-	workspaces     []clkup.Workspace
-	workspaceCache map[string]*WorkspaceData
+	user       clkup.User
+	workspaces []clkup.Workspace
+	teamPerf   map[string]clkup.Performance
 }
 
-func InitialModel(client *clkup.APIClient) dashboardModel {
+func InitialModel(client *clkup.APIClient, db *dbstore.DB) dashboardModel {
 	s := spinner.New()
 	s.Spinner = spinner.Points
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7B2CBF"))
@@ -93,12 +95,13 @@ func InitialModel(client *clkup.APIClient) dashboardModel {
 	client.LogChan = logChan
 
 	return dashboardModel{
-		apiClient:      client,
-		spinner:        s,
-		state:          stateInit,
-		status:         "Fetching User and Workspace data...",
-		logChan:        logChan,
-		workspaceCache: make(map[string]*WorkspaceData),
+		apiClient: client,
+		db:        db,
+		spinner:   s,
+		state:     stateInit,
+		status:    "Fetching User and Workspace data...",
+		logChan:   logChan,
+		teamPerf:  make(map[string]clkup.Performance),
 	}
 }
 
@@ -245,7 +248,9 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.state == stateIdle || m.state == stateLoaded {
 					selectedWS := string(m.workspaces[m.cursorWorkspace].ID)
 
-					if _, exists := m.workspaceCache[selectedWS]; exists {
+					// INSTANT SQLITE CHECK: Are there spaces saved for this team?
+					spaces := m.db.GetSpaces(selectedWS)
+					if len(spaces) > 0 {
 						m.activeTeamID = selectedWS
 						m.depth = DepthSpaces
 						m.cursorSpace, m.cursorFolder, m.cursorList, m.cursorTask = 0, 0, 0, 0
@@ -284,10 +289,11 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case DepthLists:
 				m.depth = DepthFolders
 			case DepthTasks:
-				wd := m.workspaceCache[m.activeTeamID]
-				if wd != nil && len(wd.Spaces) > 0 && m.cursorSpace < len(wd.Spaces) {
-					sID := string(wd.Spaces[m.cursorSpace].ID)
-					folders := wd.FoldersBySpace[sID]
+				// INSTANT SQLITE CHECK for back-navigation
+				spaces := m.db.GetSpaces(m.activeTeamID)
+				if len(spaces) > 0 && m.cursorSpace < len(spaces) {
+					sID := string(spaces[m.cursorSpace].ID)
+					folders := m.db.GetFolders(sID)
 					if m.cursorFolder < len(folders) {
 						m.depth = DepthLists
 					} else {
@@ -299,6 +305,15 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case DepthTaskDetails:
 				m.depth = DepthTasks
 				m.taskScrollOffset = 0
+			}
+		case "r":
+			// Force a sync of the currently active workspace
+			if (m.state == stateLoaded || m.state == stateIdle) && m.activeTeamID != "" {
+				m.state = stateFetchingPlan
+				m.status = "Force syncing workspace data from ClickUp..."
+
+				// This bypasses the SQLite check and forces the API fetch
+				return m, tea.Batch(m.spinner.Tick, fetchPlanCmd(m.apiClient, m.activeTeamID))
 			}
 		}
 
@@ -329,7 +344,7 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateFetchingData
 		m.status = fmt.Sprintf("Fan-out fetch initiated at %d RPM...", rpm)
 
-		return m, fetchHierarchyCmd(m.apiClient, msg.TeamID)
+		return m, fetchHierarchyCmd(m.apiClient, m.db, msg.TeamID)
 
 	case LogMsg:
 		m.logs = append(m.logs, string(msg))
@@ -339,7 +354,11 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForLog(m.logChan)
 
 	case FanOutCompleteMsg:
-		m.workspaceCache[msg.TeamID] = msg.Data
+		// Save just the performance stats instead of the whole data tree
+		if m.teamPerf == nil {
+			m.teamPerf = make(map[string]clkup.Performance)
+		}
+		m.teamPerf[msg.TeamID] = msg.Performance
 		m.state = stateLoaded
 		m.depth = DepthWorkspaces
 		return m, nil
@@ -442,9 +461,9 @@ func (m dashboardModel) View() string {
 
 	var footer string
 	if (m.state == stateLoaded || m.state == stateIdle) && m.activeTeamID != "" {
-		if wd, ok := m.workspaceCache[m.activeTeamID]; ok {
+		if perf, ok := m.teamPerf[m.activeTeamID]; ok {
 			perfText := fmt.Sprintf("Last fetch completed in %s | Tasks Per Second: %s | Est. RPM: %s",
-				wd.Performance.Duration, wd.Performance.TPS, wd.Performance.RPM)
+				perf.Duration, perf.TPS, perf.RPM)
 			if lipgloss.Width(perfText) > safeTextWidth {
 				runes := []rune(perfText)
 				perfText = string(runes[:safeTextWidth-1]) + "…"

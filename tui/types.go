@@ -26,8 +26,8 @@ type WorkspaceData struct {
 }
 
 type FanOutCompleteMsg struct {
-	TeamID string
-	Data   *WorkspaceData
+	TeamID      string
+	Performance clkup.Performance
 }
 
 type ErrMsg struct{ err error }

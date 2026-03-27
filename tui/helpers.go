@@ -12,8 +12,6 @@ import (
 )
 
 func (m dashboardModel) getLeftPane() ([]ListItem, string, int) {
-	wd := m.workspaceCache[m.activeTeamID]
-
 	switch m.depth {
 	case DepthWorkspaces:
 		var items []ListItem
@@ -23,51 +21,40 @@ func (m dashboardModel) getLeftPane() ([]ListItem, string, int) {
 		return items, "Workspaces", m.cursorWorkspace
 
 	case DepthSpaces:
-		if wd == nil {
-			return nil, "Spaces", 0
-		}
 		var items []ListItem
-		for _, s := range wd.Spaces {
+		for _, s := range m.db.GetSpaces(m.activeTeamID) {
 			items = append(items, ListItem{ID: string(s.ID), Name: s.Name, Type: "space"})
 		}
 		return items, "Spaces", m.cursorSpace
 
 	case DepthFolders:
-		if wd == nil || len(wd.Spaces) == 0 {
+		space := m.getActiveSpace()
+		if space == nil {
 			return nil, "Folders & Standalone Lists", 0
 		}
 		var items []ListItem
-		sID := string(wd.Spaces[m.cursorSpace].ID)
-		for _, f := range wd.FoldersBySpace[sID] {
+		for _, f := range m.db.GetFolders(string(space.ID)) {
 			items = append(items, ListItem{ID: string(f.ID), Name: fmt.Sprintf("📁 %s", f.Name), Type: "folder"})
 		}
-		for _, l := range wd.ListsBySpace[sID] {
+		for _, l := range m.db.GetFolderlessLists(string(space.ID)) {
 			items = append(items, ListItem{ID: string(l.ID), Name: fmt.Sprintf("📄 %s", l.Name), Type: "list"})
 		}
 		return items, "Folders & Standalone Lists", m.cursorFolder
 
 	case DepthLists:
-		if wd == nil || len(wd.Spaces) == 0 {
+		folder := m.getActiveFolder()
+		if folder == nil {
 			return nil, "Lists", 0
 		}
 		var items []ListItem
-		sID := string(wd.Spaces[m.cursorSpace].ID)
-		folders := wd.FoldersBySpace[sID]
-		if m.cursorFolder < len(folders) {
-			fID := string(folders[m.cursorFolder].ID)
-			for _, l := range wd.ListsByFolder[fID] {
-				items = append(items, ListItem{ID: string(l.ID), Name: fmt.Sprintf("📄 %s", l.Name), Type: "list"})
-			}
+		for _, l := range m.db.GetListsByFolder(string(folder.ID)) {
+			items = append(items, ListItem{ID: string(l.ID), Name: fmt.Sprintf("📄 %s", l.Name), Type: "list"})
 		}
 		return items, "Lists", m.cursorList
 
 	case DepthTasks, DepthTaskDetails:
-		if wd == nil {
-			return nil, "Tasks", 0
-		}
 		var items []ListItem
-		listID := m.getActiveListID()
-		for _, t := range wd.TasksByList[listID] {
+		for _, t := range m.db.GetTasksByList(m.getActiveListID()) {
 			items = append(items, ListItem{ID: string(t.Id), Name: t.Name, Type: "task", Subtitle: t.Status.Status})
 		}
 		return items, "Tasks", m.cursorTask
@@ -76,70 +63,64 @@ func (m dashboardModel) getLeftPane() ([]ListItem, string, int) {
 }
 
 func (m dashboardModel) getRightPane() ([]ListItem, string, string) {
-	wd := m.workspaceCache[m.activeTeamID]
-
 	switch m.depth {
 	case DepthWorkspaces:
-		if len(m.workspaces) == 0 {
-			return nil, "Instructions", "\n  <-- Press Enter to fetch Workspace data."
-		}
-		hoveredWS := string(m.workspaces[m.cursorWorkspace].ID)
-		if hwd, ok := m.workspaceCache[hoveredWS]; ok {
-			var items []ListItem
-			for _, s := range hwd.Spaces {
-				items = append(items, ListItem{ID: string(s.ID), Name: s.Name, Type: "space"})
+		if len(m.workspaces) > 0 {
+			hoveredWS := string(m.workspaces[m.cursorWorkspace].ID)
+			spaces := m.db.GetSpaces(hoveredWS)
+			if len(spaces) > 0 {
+				var items []ListItem
+				for _, s := range spaces {
+					items = append(items, ListItem{ID: string(s.ID), Name: s.Name, Type: "space"})
+				}
+				return items, "Spaces Preview", ""
 			}
-			return items, "Spaces Preview", ""
 		}
 		return nil, "Instructions", "\n  <-- Press Enter to fetch Workspace data."
 
 	case DepthSpaces:
-		if wd == nil || len(wd.Spaces) == 0 || m.cursorSpace >= len(wd.Spaces) {
-			return nil, "Folders & Standalone Lists", ""
+		space := m.getActiveSpace()
+		if space != nil {
+			var items []ListItem
+			for _, f := range m.db.GetFolders(string(space.ID)) {
+				items = append(items, ListItem{ID: string(f.ID), Name: fmt.Sprintf("📁 %s", f.Name), Type: "folder"})
+			}
+			for _, l := range m.db.GetFolderlessLists(string(space.ID)) {
+				items = append(items, ListItem{ID: string(l.ID), Name: fmt.Sprintf("📄 %s", l.Name), Type: "list"})
+			}
+			return items, "Folders & Standalone Lists", ""
 		}
-		var items []ListItem
-		sID := string(wd.Spaces[m.cursorSpace].ID)
-		for _, f := range wd.FoldersBySpace[sID] {
-			items = append(items, ListItem{ID: string(f.ID), Name: fmt.Sprintf("📁 %s", f.Name), Type: "folder"})
-		}
-		for _, l := range wd.ListsBySpace[sID] {
-			items = append(items, ListItem{ID: string(l.ID), Name: fmt.Sprintf("📄 %s", l.Name), Type: "list"})
-		}
-		return items, "Folders & Standalone Lists", ""
+		return nil, "", ""
 
 	case DepthFolders:
-		if wd == nil || len(wd.Spaces) == 0 {
+		space := m.getActiveSpace()
+		if space == nil {
 			return nil, "", ""
 		}
-		var items []ListItem
-		sID := string(wd.Spaces[m.cursorSpace].ID)
-		folders := wd.FoldersBySpace[sID]
-
+		folders := m.db.GetFolders(string(space.ID))
 		if m.cursorFolder < len(folders) {
-			fID := string(folders[m.cursorFolder].ID)
-			for _, l := range wd.ListsByFolder[fID] {
+			var items []ListItem
+			for _, l := range m.db.GetListsByFolder(string(folders[m.cursorFolder].ID)) {
 				items = append(items, ListItem{ID: string(l.ID), Name: fmt.Sprintf("📄 %s", l.Name), Type: "list"})
 			}
 			return items, "Lists", ""
 		} else {
+			// Hovering over a folderless list
 			idx := m.cursorFolder - len(folders)
-			lists := wd.ListsBySpace[sID]
+			lists := m.db.GetFolderlessLists(string(space.ID))
 			if idx >= 0 && idx < len(lists) {
-				lID := string(lists[idx].ID)
-				for _, t := range wd.TasksByList[lID] {
+				var items []ListItem
+				for _, t := range m.db.GetTasksByList(string(lists[idx].ID)) {
 					items = append(items, ListItem{ID: string(t.Id), Name: t.Name, Type: "task", Subtitle: t.Status.Status})
 				}
+				return items, "Tasks", ""
 			}
-			return items, "Tasks", ""
 		}
+		return nil, "", ""
 
 	case DepthLists:
-		if wd == nil {
-			return nil, "Tasks", ""
-		}
 		var items []ListItem
-		lID := m.getHoveredListID()
-		for _, t := range wd.TasksByList[lID] {
+		for _, t := range m.db.GetTasksByList(m.getHoveredListID()) {
 			items = append(items, ListItem{ID: string(t.Id), Name: t.Name, Type: "task", Subtitle: t.Status.Status})
 		}
 		return items, "Tasks", ""
@@ -153,54 +134,6 @@ func (m dashboardModel) getRightPane() ([]ListItem, string, string) {
 		return nil, "Task Details", "No task selected"
 	}
 	return nil, "", ""
-}
-
-func (m dashboardModel) getCurrentSelectionURL() string {
-	if m.state != stateLoaded && m.state != stateIdle {
-		return ""
-	}
-	teamID := m.activeTeamID
-
-	switch m.depth {
-	case DepthWorkspaces:
-		if len(m.workspaces) > 0 && m.cursorWorkspace < len(m.workspaces) {
-			return fmt.Sprintf("https://app.clickup.com/%s", m.workspaces[m.cursorWorkspace].ID)
-		}
-	case DepthSpaces:
-		wd := m.workspaceCache[teamID]
-		if wd != nil && m.cursorSpace < len(wd.Spaces) {
-			return fmt.Sprintf("https://app.clickup.com/%s/v/s/%s", teamID, wd.Spaces[m.cursorSpace].ID)
-		}
-	case DepthFolders:
-		wd := m.workspaceCache[teamID]
-		if wd != nil && len(wd.Spaces) > 0 {
-			sID := string(wd.Spaces[m.cursorSpace].ID)
-			folders := wd.FoldersBySpace[sID]
-			if m.cursorFolder < len(folders) {
-				return fmt.Sprintf("https://app.clickup.com/%s/v/f/%s", teamID, folders[m.cursorFolder].ID)
-			} else {
-				idx := m.cursorFolder - len(folders)
-				lists := wd.ListsBySpace[sID]
-				if idx >= 0 && idx < len(lists) {
-					return fmt.Sprintf("https://app.clickup.com/%s/v/l/li/%s", teamID, lists[idx].ID)
-				}
-			}
-		}
-	case DepthLists:
-		wd := m.workspaceCache[teamID]
-		if wd != nil {
-			lID := m.getHoveredListID()
-			if lID != "" {
-				return fmt.Sprintf("https://app.clickup.com/%s/v/l/li/%s", teamID, lID)
-			}
-		}
-	case DepthTasks, DepthTaskDetails:
-		t := m.getHoveredTask()
-		if t != nil {
-			return fmt.Sprintf("https://app.clickup.com/t/%s", t.Id)
-		}
-	}
-	return ""
 }
 
 func OpenBrowser(url string) error {
@@ -225,95 +158,70 @@ func OpenBrowser(url string) error {
 
 func (m dashboardModel) getStats() (spaces, folders, lists, tasks string) {
 	teamID := m.activeTeamID
-	if m.depth == DepthWorkspaces {
-		if len(m.workspaces) == 0 {
-			return "-", "-", "-", "-"
-		}
+	if m.depth == DepthWorkspaces && len(m.workspaces) > 0 {
 		teamID = string(m.workspaces[m.cursorWorkspace].ID)
 	}
 
-	wd, exists := m.workspaceCache[teamID]
-	if !exists {
+	if teamID == "" {
 		return "-", "-", "-", "-"
 	}
 
+	// Leveraging SQLite COUNT() for instant stats without unmarshaling JSON
 	switch m.depth {
 	case DepthWorkspaces:
-		fCount, lCount := 0, 0
-		for _, f := range wd.FoldersBySpace {
-			fCount += len(f)
+		var sCount, fCount, lCount, tCount int
+		m.db.QueryRow(`SELECT COUNT(*) FROM spaces WHERE team_id = ?`, teamID).Scan(&sCount)
+		m.db.QueryRow(`SELECT COUNT(*) FROM folders WHERE space_id IN (SELECT id FROM spaces WHERE team_id = ?)`, teamID).Scan(&fCount)
+		m.db.QueryRow(`SELECT COUNT(*) FROM lists WHERE space_id IN (SELECT id FROM spaces WHERE team_id = ?)`, teamID).Scan(&lCount)
+		m.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE list_id IN (SELECT id FROM lists WHERE space_id IN (SELECT id FROM spaces WHERE team_id = ?))`, teamID).Scan(&tCount)
+		if sCount == 0 {
+			return "-", "-", "-", "-"
 		}
-		for _, l := range wd.ListsByFolder {
-			lCount += len(l)
-		}
-		for _, l := range wd.ListsBySpace {
-			lCount += len(l)
-		}
-		return fmt.Sprint(len(wd.Spaces)), fmt.Sprint(fCount), fmt.Sprint(lCount), fmt.Sprint(len(wd.Tasks))
+		return fmt.Sprint(sCount), fmt.Sprint(fCount), fmt.Sprint(lCount), fmt.Sprint(tCount)
 
 	case DepthSpaces:
-		if len(wd.Spaces) == 0 {
+		space := m.getActiveSpace()
+		if space == nil {
 			return "0", "0", "0", "0"
 		}
-		sID := string(wd.Spaces[m.cursorSpace].ID)
-		fCount := len(wd.FoldersBySpace[sID])
-		lCount := len(wd.ListsBySpace[sID])
-		for _, f := range wd.FoldersBySpace[sID] {
-			lCount += len(wd.ListsByFolder[string(f.ID)])
-		}
-		tCount := 0
-		var listIDs []string
-		for _, l := range wd.ListsBySpace[sID] {
-			listIDs = append(listIDs, string(l.ID))
-		}
-		for _, f := range wd.FoldersBySpace[sID] {
-			for _, l := range wd.ListsByFolder[string(f.ID)] {
-				listIDs = append(listIDs, string(l.ID))
-			}
-		}
-		for _, lid := range listIDs {
-			tCount += len(wd.TasksByList[lid])
-		}
+		sID := string(space.ID)
+
+		var fCount, lCount, tCount int
+		m.db.QueryRow(`SELECT COUNT(*) FROM folders WHERE space_id = ?`, sID).Scan(&fCount)
+		m.db.QueryRow(`SELECT COUNT(*) FROM lists WHERE space_id = ?`, sID).Scan(&lCount)
+		m.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE list_id IN (SELECT id FROM lists WHERE space_id = ?)`, sID).Scan(&tCount)
 		return "1", fmt.Sprint(fCount), fmt.Sprint(lCount), fmt.Sprint(tCount)
 
 	case DepthFolders:
-		if len(wd.Spaces) == 0 {
-			return "-", "0", "0", "0"
-		}
-		sID := string(wd.Spaces[m.cursorSpace].ID)
-		folders := wd.FoldersBySpace[sID]
-
-		if m.cursorFolder < len(folders) {
-			fID := string(folders[m.cursorFolder].ID)
-			lCount := len(wd.ListsByFolder[fID])
-			tCount := 0
-			for _, l := range wd.ListsByFolder[fID] {
-				tCount += len(wd.TasksByList[string(l.ID)])
-			}
+		folder := m.getActiveFolder()
+		if folder != nil {
+			var lCount, tCount int
+			m.db.QueryRow(`SELECT COUNT(*) FROM lists WHERE folder_id = ?`, string(folder.ID)).Scan(&lCount)
+			m.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE list_id IN (SELECT id FROM lists WHERE folder_id = ?)`, string(folder.ID)).Scan(&tCount)
 			return "-", "1", fmt.Sprint(lCount), fmt.Sprint(tCount)
-		} else {
-			idx := m.cursorFolder - len(folders)
-			lists := wd.ListsBySpace[sID]
-			if idx >= 0 && idx < len(lists) {
-				lID := string(lists[idx].ID)
-				tCount := len(wd.TasksByList[lID])
-				return "-", "-", "1", fmt.Sprint(tCount)
-			}
-			return "-", "-", "-", "-"
 		}
+		listID := m.getActiveListID()
+		if listID != "" {
+			var tCount int
+			m.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE list_id = ?`, listID).Scan(&tCount)
+			return "-", "-", "1", fmt.Sprint(tCount)
+		}
+		return "-", "-", "-", "-"
 
 	case DepthLists:
-		lID := m.getHoveredListID()
-		if lID != "" {
-			tCount := len(wd.TasksByList[lID])
+		listID := m.getHoveredListID()
+		if listID != "" {
+			var tCount int
+			m.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE list_id = ?`, listID).Scan(&tCount)
 			return "-", "-", "1", fmt.Sprint(tCount)
 		}
 		return "-", "-", "-", "-"
 
 	case DepthTasks, DepthTaskDetails:
-		lID := m.getActiveListID()
-		if lID != "" {
-			tCount := len(wd.TasksByList[lID])
+		listID := m.getActiveListID()
+		if listID != "" {
+			var tCount int
+			m.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE list_id = ?`, listID).Scan(&tCount)
 			return "-", "-", "-", fmt.Sprint(tCount)
 		}
 		return "-", "-", "-", "-"
@@ -322,22 +230,41 @@ func (m dashboardModel) getStats() (spaces, folders, lists, tasks string) {
 	return "-", "-", "-", "-"
 }
 
+func (m dashboardModel) getActiveSpace() *clkup.Space {
+	spaces := m.db.GetSpaces(m.activeTeamID)
+	if m.cursorSpace >= 0 && m.cursorSpace < len(spaces) {
+		return &spaces[m.cursorSpace]
+	}
+	return nil
+}
+
+func (m dashboardModel) getActiveFolder() *clkup.Folder {
+	space := m.getActiveSpace()
+	if space == nil {
+		return nil
+	}
+	folders := m.db.GetFolders(string(space.ID))
+	if m.cursorFolder >= 0 && m.cursorFolder < len(folders) {
+		return &folders[m.cursorFolder]
+	}
+	return nil
+}
+
 func (m dashboardModel) getActiveListID() string {
-	wd := m.workspaceCache[m.activeTeamID]
-	if wd == nil || len(wd.Spaces) == 0 {
+	space := m.getActiveSpace()
+	if space == nil {
 		return ""
 	}
-	sID := string(wd.Spaces[m.cursorSpace].ID)
-	folders := wd.FoldersBySpace[sID]
+	folders := m.db.GetFolders(string(space.ID))
+
 	if m.cursorFolder < len(folders) {
-		fID := string(folders[m.cursorFolder].ID)
-		lists := wd.ListsByFolder[fID]
-		if m.cursorList < len(lists) {
+		lists := m.db.GetListsByFolder(string(folders[m.cursorFolder].ID))
+		if m.cursorList >= 0 && m.cursorList < len(lists) {
 			return string(lists[m.cursorList].ID)
 		}
 	} else {
 		idx := m.cursorFolder - len(folders)
-		lists := wd.ListsBySpace[sID]
+		lists := m.db.GetFolderlessLists(string(space.ID))
 		if idx >= 0 && idx < len(lists) {
 			return string(lists[idx].ID)
 		}
@@ -346,50 +273,23 @@ func (m dashboardModel) getActiveListID() string {
 }
 
 func (m dashboardModel) getHoveredListID() string {
-	wd := m.workspaceCache[m.activeTeamID]
-	if wd == nil || len(wd.Spaces) == 0 {
+	folder := m.getActiveFolder()
+	if folder == nil {
 		return ""
 	}
-	sID := string(wd.Spaces[m.cursorSpace].ID)
-	folders := wd.FoldersBySpace[sID]
-	if m.cursorFolder < len(folders) {
-		fID := string(folders[m.cursorFolder].ID)
-		lists := wd.ListsByFolder[fID]
-		if m.cursorList < len(lists) {
-			return string(lists[m.cursorList].ID)
-		}
+	lists := m.db.GetListsByFolder(string(folder.ID))
+	if m.cursorList >= 0 && m.cursorList < len(lists) {
+		return string(lists[m.cursorList].ID)
 	}
 	return ""
 }
 
 func (m dashboardModel) getHoveredTask() *clkup.Task {
-	wd := m.workspaceCache[m.activeTeamID]
-	if wd == nil {
-		return nil
-	}
-	listID := m.getActiveListID()
-	tasksInList := wd.TasksByList[listID]
-
-	if m.cursorTask >= 0 && m.cursorTask < len(tasksInList) {
-		return &tasksInList[m.cursorTask]
+	tasks := m.db.GetTasksByList(m.getActiveListID())
+	if m.cursorTask >= 0 && m.cursorTask < len(tasks) {
+		return &tasks[m.cursorTask]
 	}
 	return nil
-}
-
-func getListIDFromTask(t clkup.Task) string {
-	b, err := json.Marshal(t)
-	if err != nil {
-		return ""
-	}
-	var temp map[string]interface{}
-	json.Unmarshal(b, &temp)
-
-	if listObj, ok := temp["list"].(map[string]interface{}); ok {
-		if id, ok := listObj["id"].(string); ok {
-			return id
-		}
-	}
-	return ""
 }
 
 func (m dashboardModel) getBreadcrumbs(maxWidth int) string {
@@ -401,31 +301,28 @@ func (m dashboardModel) getBreadcrumbs(maxWidth int) string {
 		crumbs = append(crumbs, m.workspaces[m.cursorWorkspace].Name)
 	}
 
-	wd := m.workspaceCache[m.activeTeamID]
-	if wd != nil {
-		if m.depth >= DepthSpaces && m.cursorSpace < len(wd.Spaces) {
-			crumbs = append(crumbs, wd.Spaces[m.cursorSpace].Name)
+	space := m.getActiveSpace()
+	if space != nil {
+		if m.depth >= DepthSpaces {
+			crumbs = append(crumbs, space.Name)
 		}
-		if m.depth >= DepthFolders && len(wd.Spaces) > 0 {
-			sID := string(wd.Spaces[m.cursorSpace].ID)
-			folders := wd.FoldersBySpace[sID]
+
+		folders := m.db.GetFolders(string(space.ID))
+		if m.depth >= DepthFolders {
 			if m.cursorFolder < len(folders) {
 				crumbs = append(crumbs, folders[m.cursorFolder].Name)
 			} else {
 				idx := m.cursorFolder - len(folders)
-				lists := wd.ListsBySpace[sID]
+				lists := m.db.GetFolderlessLists(string(space.ID))
 				if idx >= 0 && idx < len(lists) {
 					crumbs = append(crumbs, lists[idx].Name)
 				}
 			}
 		}
-		if m.depth >= DepthLists && len(wd.Spaces) > 0 {
-			sID := string(wd.Spaces[m.cursorSpace].ID)
-			folders := wd.FoldersBySpace[sID]
+		if m.depth >= DepthLists {
 			if m.cursorFolder < len(folders) {
-				fID := string(folders[m.cursorFolder].ID)
-				lists := wd.ListsByFolder[fID]
-				if m.cursorList < len(lists) {
+				lists := m.db.GetListsByFolder(string(folders[m.cursorFolder].ID))
+				if m.cursorList >= 0 && m.cursorList < len(lists) {
 					crumbs = append(crumbs, lists[m.cursorList].Name)
 				}
 			}
@@ -439,13 +336,55 @@ func (m dashboardModel) getBreadcrumbs(maxWidth int) string {
 	}
 
 	crumbStr := strings.Join(crumbs, " > ")
-
 	if lipgloss.Width(crumbStr) > maxWidth {
 		runes := []rune(crumbStr)
 		crumbStr = "…" + string(runes[len(runes)-(maxWidth-1):])
 	}
-
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("#9D4EDD")).Render(crumbStr)
+}
+
+func (m dashboardModel) getCurrentSelectionURL() string {
+	if m.state != stateLoaded && m.state != stateIdle {
+		return ""
+	}
+	teamID := m.activeTeamID
+
+	switch m.depth {
+	case DepthWorkspaces:
+		if len(m.workspaces) > 0 && m.cursorWorkspace < len(m.workspaces) {
+			return fmt.Sprintf("https://app.clickup.com/%s", m.workspaces[m.cursorWorkspace].ID)
+		}
+	case DepthSpaces:
+		space := m.getActiveSpace()
+		if space != nil {
+			return fmt.Sprintf("https://app.clickup.com/%s/v/s/%s", teamID, space.ID)
+		}
+	case DepthFolders:
+		space := m.getActiveSpace()
+		if space != nil {
+			folders := m.db.GetFolders(string(space.ID))
+			if m.cursorFolder < len(folders) {
+				return fmt.Sprintf("https://app.clickup.com/%s/v/f/%s", teamID, folders[m.cursorFolder].ID)
+			} else {
+				idx := m.cursorFolder - len(folders)
+				lists := m.db.GetFolderlessLists(string(space.ID))
+				if idx >= 0 && idx < len(lists) {
+					return fmt.Sprintf("https://app.clickup.com/%s/v/l/li/%s", teamID, lists[idx].ID)
+				}
+			}
+		}
+	case DepthLists:
+		lID := m.getHoveredListID()
+		if lID != "" {
+			return fmt.Sprintf("https://app.clickup.com/%s/v/l/li/%s", teamID, lID)
+		}
+	case DepthTasks, DepthTaskDetails:
+		t := m.getHoveredTask()
+		if t != nil {
+			return fmt.Sprintf("https://app.clickup.com/t/%s", t.Id)
+		}
+	}
+	return ""
 }
 
 func renderPane(items []ListItem, title string, rawText string, cursor int, scrollOffset int, totalWidth int, totalHeight int, isActive bool) string {
