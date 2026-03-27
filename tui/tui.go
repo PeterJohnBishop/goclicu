@@ -81,6 +81,8 @@ type dashboardModel struct {
 	cursorTask       int
 	taskScrollOffset int
 
+	showJSON bool
+
 	// Data Store
 	user       clkup.User
 	workspaces []clkup.Workspace
@@ -102,13 +104,14 @@ func InitialModel(client *clkup.APIClient, db *dbstore.DB) dashboardModel {
 		status:    "Fetching User and Workspace data...",
 		logChan:   logChan,
 		teamPerf:  make(map[string]clkup.Performance),
+		showJSON:  false,
 	}
 }
 
 func (m dashboardModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		fetchInitDataCmd(m.apiClient),
+		fetchInitDataCmd(m.apiClient, m.db, false),
 		waitForLog(m.logChan),
 	)
 }
@@ -192,6 +195,11 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.taskScrollOffset = 0
 				}
 			}
+
+		case "J": // Shift + j
+			m.showJSON = !m.showJSON
+			m.taskScrollOffset = 0
+			return m, nil
 
 		case "k", "up":
 			if m.depth == DepthTaskDetails {
@@ -307,12 +315,17 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.taskScrollOffset = 0
 			}
 		case "r":
-			// Force a sync of the currently active workspace
+			// if viewing the main Workspaces screen, refresh user and Workspace data
+			if m.depth == DepthWorkspaces {
+				m.state = stateInit
+				m.status = "Force syncing User and Workspaces..."
+				return m, tea.Batch(m.spinner.Tick, fetchInitDataCmd(m.apiClient, m.db, true)) // true = force bypass SQLite
+			}
+
+			// If viewing a Workspace, force sync the tasks and folders
 			if (m.state == stateLoaded || m.state == stateIdle) && m.activeTeamID != "" {
 				m.state = stateFetchingPlan
 				m.status = "Force syncing workspace data from ClickUp..."
-
-				// This bypasses the SQLite check and forces the API fetch
 				return m, tea.Batch(m.spinner.Tick, fetchPlanCmd(m.apiClient, m.activeTeamID))
 			}
 		}

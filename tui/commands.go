@@ -24,8 +24,20 @@ func fetchPlanCmd(client *clkup.APIClient, teamID string) tea.Cmd {
 	}
 }
 
-func fetchInitDataCmd(client *clkup.APIClient) tea.Cmd {
+func fetchInitDataCmd(client *clkup.APIClient, db *dbstore.DB, forceFetch bool) tea.Cmd {
 	return func() tea.Msg {
+		if !forceFetch {
+			cachedUser := db.GetUser()
+			cachedWorkspaces := db.GetWorkspaces()
+
+			if cachedUser != nil && len(cachedWorkspaces) > 0 {
+				return InitDataMsg{
+					User:       *cachedUser,
+					Workspaces: cachedWorkspaces,
+				}
+			}
+		}
+
 		var user clkup.User
 		var workspaces []clkup.Workspace
 		var err error
@@ -38,7 +50,7 @@ func fetchInitDataCmd(client *clkup.APIClient) tea.Cmd {
 			time.Sleep(1 * time.Second)
 		}
 		if err != nil {
-			return ErrMsg{fmt.Errorf("failed to fetch user after 3 attempts: %w", err)}
+			return ErrMsg{fmt.Errorf("failed to fetch user: %w", err)}
 		}
 
 		for attempts := 0; attempts < 3; attempts++ {
@@ -49,12 +61,11 @@ func fetchInitDataCmd(client *clkup.APIClient) tea.Cmd {
 			time.Sleep(1 * time.Second)
 		}
 		if err != nil {
-			return ErrMsg{fmt.Errorf("workspace API error after 3 attempts: %w", err)}
+			return ErrMsg{fmt.Errorf("workspace API error: %w", err)}
 		}
 
-		if len(workspaces) == 0 {
-			return ErrMsg{fmt.Errorf("success, but workspace array was empty")}
-		}
+		db.SaveUser(user)
+		db.SaveWorkspaces(workspaces)
 
 		return InitDataMsg{
 			User:       user,

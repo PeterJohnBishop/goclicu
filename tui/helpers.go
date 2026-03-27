@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"super-duper-fortnight/clkup"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -63,6 +65,12 @@ func (m dashboardModel) getLeftPane() ([]ListItem, string, int) {
 }
 
 func (m dashboardModel) getRightPane() ([]ListItem, string, string) {
+	// 1. GLOBAL JSON OVERRIDE (Shift+J)
+	if m.showJSON {
+		return nil, "Raw JSON (Shift+J to toggle)", m.getHoveredRawJSON()
+	}
+
+	// 2. STANDARD VIEWS
 	switch m.depth {
 	case DepthWorkspaces:
 		if len(m.workspaces) > 0 {
@@ -105,7 +113,6 @@ func (m dashboardModel) getRightPane() ([]ListItem, string, string) {
 			}
 			return items, "Lists", ""
 		} else {
-			// Hovering over a folderless list
 			idx := m.cursorFolder - len(folders)
 			lists := m.db.GetFolderlessLists(string(space.ID))
 			if idx >= 0 && idx < len(lists) {
@@ -128,8 +135,35 @@ func (m dashboardModel) getRightPane() ([]ListItem, string, string) {
 	case DepthTasks, DepthTaskDetails:
 		t := m.getHoveredTask()
 		if t != nil {
-			b, _ := json.MarshalIndent(t, "", "  ")
-			return nil, "Task Details JSON", string(b)
+			var sb strings.Builder
+
+			// Header Info
+			sb.WriteString(fmt.Sprintf("Name:   %s\n", t.Name))
+			sb.WriteString(fmt.Sprintf("Status: %s\n", strings.ToUpper(t.Status.Status)))
+			sb.WriteString(fmt.Sprintf("ID:     %s\n", t.Id))
+			sb.WriteString("\n--- Dates ---\n")
+
+			// Timezone Aware Dates
+			tz := m.user.Timezone
+			sb.WriteString(fmt.Sprintf("Created: %s\n", formatClickUpDate(t.DateCreated, tz)))
+			sb.WriteString(fmt.Sprintf("Updated: %s\n", formatClickUpDate(t.DateUpdated, tz)))
+
+			if t.StartDate != nil {
+				sb.WriteString(fmt.Sprintf("Start:   %s\n", formatClickUpDate(t.StartDate, tz)))
+			}
+			if t.DueDate != nil {
+				sb.WriteString(fmt.Sprintf("Due:     %s\n", formatClickUpDate(t.DueDate, tz)))
+			}
+
+			// Description
+			sb.WriteString("\n--- Description ---\n")
+			if t.Description == "" {
+				sb.WriteString("No description provided.")
+			} else {
+				sb.WriteString(t.Description)
+			}
+
+			return nil, "Task Details [Shift+J for JSON]", sb.String()
 		}
 		return nil, "Task Details", "No task selected"
 	}
@@ -496,4 +530,92 @@ func renderPane(items []ListItem, title string, rawText string, cursor int, scro
 
 	content := strings.Join(uiLines, "\n")
 	return paneStyle.Render(content)
+}
+
+func formatClickUpDate(val any, tz string) string {
+	if val == nil {
+		return "-"
+	}
+
+	var msStr string
+	switch v := val.(type) {
+	case string:
+		msStr = v
+	case float64:
+		msStr = fmt.Sprintf("%.0f", v)
+	default:
+		return "-"
+	}
+
+	if msStr == "" || msStr == "0" {
+		return "-"
+	}
+
+	ms, err := strconv.ParseInt(msStr, 10, 64)
+	if err != nil {
+		return msStr
+	}
+
+	t := time.UnixMilli(ms)
+	loc, err := time.LoadLocation(tz)
+	if err == nil {
+		t = t.In(loc)
+	}
+
+	return t.Format("Jan 02, 2006 03:04 PM")
+}
+
+func (m dashboardModel) getHoveredRawJSON() string {
+	if m.depth == DepthWorkspaces {
+		if m.cursorWorkspace >= 0 && m.cursorWorkspace < len(m.workspaces) {
+			b, _ := json.MarshalIndent(m.workspaces[m.cursorWorkspace], "", "  ")
+			return string(b)
+		}
+		return "No data available."
+	}
+
+	var tableName, id string
+
+	switch m.depth {
+	case DepthSpaces:
+		if space := m.getActiveSpace(); space != nil {
+			tableName, id = "spaces", string(space.ID)
+		}
+	case DepthFolders:
+		if folder := m.getActiveFolder(); folder != nil {
+			tableName, id = "folders", string(folder.ID)
+		} else {
+			space := m.getActiveSpace()
+			if space != nil {
+				folders := m.db.GetFolders(string(space.ID))
+				idx := m.cursorFolder - len(folders)
+				lists := m.db.GetFolderlessLists(string(space.ID))
+				if idx >= 0 && idx < len(lists) {
+					tableName, id = "lists", string(lists[idx].ID)
+				}
+			}
+		}
+	case DepthLists:
+		if lID := m.getHoveredListID(); lID != "" {
+			tableName, id = "lists", lID
+		}
+	case DepthTasks, DepthTaskDetails:
+		if t := m.getHoveredTask(); t != nil {
+			tableName, id = "tasks", string(t.Id)
+		}
+	}
+
+	if tableName != "" && id != "" {
+		var raw string
+		err := m.db.QueryRow(fmt.Sprintf(`SELECT raw_data FROM %s WHERE id = ?`, tableName), id).Scan(&raw)
+		if err == nil {
+			// Unmarshal and Re-marshal to get pretty indentation
+			var obj map[string]interface{}
+			json.Unmarshal([]byte(raw), &obj)
+			b, _ := json.MarshalIndent(obj, "", "  ")
+			return string(b)
+		}
+	}
+
+	return "No data available."
 }

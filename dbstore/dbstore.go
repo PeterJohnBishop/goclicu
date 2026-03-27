@@ -87,6 +87,58 @@ func (db *DB) GetToken() string {
 	return token
 }
 
+func (db *DB) SaveUser(user clkup.User) error {
+	b, _ := json.Marshal(user)
+	_, err := db.Exec(`
+		INSERT INTO config (key, value) VALUES ('user', ?) 
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value
+	`, string(b))
+	return err
+}
+
+func (db *DB) GetUser() *clkup.User {
+	var raw string
+	err := db.QueryRow(`SELECT value FROM config WHERE key = 'user'`).Scan(&raw)
+	if err != nil {
+		return nil
+	}
+	var u clkup.User
+	json.Unmarshal([]byte(raw), &u)
+	return &u
+}
+
+func (db *DB) SaveWorkspaces(workspaces []clkup.Workspace) error {
+	tx, _ := db.Begin()
+	stmt, _ := tx.Prepare(`
+		INSERT INTO workspaces (id, name, raw_data) VALUES (?, ?, ?) 
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, raw_data=excluded.raw_data
+	`)
+	for _, w := range workspaces {
+		b, _ := json.Marshal(w)
+		stmt.Exec(string(w.ID), w.Name, string(b))
+	}
+	stmt.Close()
+	return tx.Commit()
+}
+
+func (db *DB) GetWorkspaces() []clkup.Workspace {
+	rows, err := db.Query(`SELECT raw_data FROM workspaces ORDER BY name`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var ws []clkup.Workspace
+	for rows.Next() {
+		var raw string
+		rows.Scan(&raw)
+		var w clkup.Workspace
+		json.Unmarshal([]byte(raw), &w)
+		ws = append(ws, w)
+	}
+	return ws
+}
+
 func (db *DB) SyncWorkspaceData(teamID string, spaces []clkup.Space, folders []clkup.Folder, lists []clkup.List, tasks []clkup.Task) error {
 	tx, err := db.Begin()
 	if err != nil {
