@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"super-duper-fortnight/clkup"
+	"goclicu/clkup"
 
 	_ "modernc.org/sqlite"
 )

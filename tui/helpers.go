@@ -3,11 +3,11 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"goclicu/clkup"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
-	"super-duper-fortnight/clkup"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"

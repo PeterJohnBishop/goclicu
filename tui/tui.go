@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"super-duper-fortnight/clkup"
-	"super-duper-fortnight/dbstore"
+	"goclicu/clkup"
+	"goclicu/dbstore"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"

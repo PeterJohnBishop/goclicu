@@ -1,4 +1,9 @@
-# GoCLIckUp
+# GOCLICU for ClickUp
+
+# Install
+
+brew install PeterJohnBishop/tap/goclickup
+- run with 'goclickup'
 
 - On launch OAuth authentication is requried to generate a ClickUp API token, and define the Workspaces the Dashbord will have access to. The token is saved to the SQLite database for local retrieval.
 
@@ -20,11 +25,11 @@
 
 Example of a task:
 
-![screenshot](https://github.com/PeterJohnBishop/super-duper-fortnight/blob/main/Assets/task_example.png?raw=true)
+![screenshot](https://github.com/PeterJohnBishop/goclicu/blob/main/Assets/task_example.png?raw=true)
 
 Example of the same task in raw JSON mode:
 
-![screenshot](https://github.com/PeterJohnBishop/super-duper-fortnight/blob/main/Assets/json_example.png?raw=true)
+![screenshot](https://github.com/PeterJohnBishop/goclicu/blob/main/Assets/json_example.png?raw=true)
 
 # in progress
 

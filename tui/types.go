@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"super-duper-fortnight/clkup"
+	"goclicu/clkup"
 	"time"
 )
 

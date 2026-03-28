@@ -1,4 +1,4 @@
-module super-duper-fortnight
+module goclicu
 
 go 1.26.1
 

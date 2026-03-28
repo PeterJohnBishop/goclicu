@@ -2,8 +2,8 @@ package tui
 
 import (
 	"fmt"
-	"super-duper-fortnight/clkup"
-	"super-duper-fortnight/dbstore"
+	"goclicu/clkup"
+	"goclicu/dbstore"
 	"sync"
 	"time"
 
