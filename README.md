@@ -25,3 +25,16 @@ Example of a task:
 Example of the same task in raw JSON mode:
 
 ![screenshot](https://github.com/PeterJohnBishop/super-duper-fortnight/blob/main/Assets/json_example.png?raw=true)
+
+# in progress
+
+- Some Custom Fields still default to RAW json, as I haven't added formatting for those types yet.
+- Add indicator that a Workspace is accessable, but data hasn't been pulled.
+- More dashboard cards/stats  
+- graphs that adjust over hierarchy selection and/or time range (slider?) like DataDog
+- Direct API Create, Update, and Delete options
+- Attachment viewer/previews
+
+Looks great with [Posting](https://posting.sh/). Just sayin.
+
+![screenshot](https://github.com/PeterJohnBishop/CLI_ckUp/blob/main/Assets/with_posting.png?raw=true)
