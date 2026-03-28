@@ -84,7 +84,7 @@ func fetchHierarchyCmd(client *clkup.APIClient, db *dbstore.DB, teamID string) t
 		var finalTasks []clkup.Task
 		var finalFolders []clkup.Folder
 		var finalLists []clkup.List
-		var finalCustomFields []clkup.CustomField // <-- New slice for Custom Fields
+		var finalCustomFields []clkup.CustomField
 
 		g.Go(func() error {
 			tasks, err := client.GetAllTasks(teamID)
