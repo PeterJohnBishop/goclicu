@@ -56,8 +56,15 @@ func (m dashboardModel) getLeftPane() ([]ListItem, string, int) {
 
 	case DepthTasks, DepthTaskDetails:
 		var items []ListItem
-		for _, t := range m.db.GetTasksByList(m.getActiveListID()) {
-			items = append(items, ListItem{ID: string(t.Id), Name: t.Name, Type: "task", Subtitle: t.Status.Status})
+		tasks, depths := m.getSortedTasks(m.getActiveListID()) // Fetch the tree
+
+		for i, t := range tasks {
+			name := t.Name
+			// Inject visual indentation based on nesting depth
+			if depths[i] > 0 {
+				name = strings.Repeat("  ", depths[i]) + "↳ " + name
+			}
+			items = append(items, ListItem{ID: string(t.Id), Name: name, Type: "task", Subtitle: t.Status.Status})
 		}
 		return items, "Tasks", m.cursorTask
 	}
@@ -113,12 +120,18 @@ func (m dashboardModel) getRightPane() ([]ListItem, string, string) {
 			}
 			return items, "Lists", ""
 		} else {
+			// Hovering over a folderless list (Preview)
 			idx := m.cursorFolder - len(folders)
 			lists := m.db.GetFolderlessLists(string(space.ID))
 			if idx >= 0 && idx < len(lists) {
 				var items []ListItem
-				for _, t := range m.db.GetTasksByList(string(lists[idx].ID)) {
-					items = append(items, ListItem{ID: string(t.Id), Name: t.Name, Type: "task", Subtitle: t.Status.Status})
+				tasks, depths := m.getSortedTasks(string(lists[idx].ID)) // Use Tree
+				for i, t := range tasks {
+					name := t.Name
+					if depths[i] > 0 {
+						name = strings.Repeat("  ", depths[i]) + "↳ " + name
+					}
+					items = append(items, ListItem{ID: string(t.Id), Name: name, Type: "task", Subtitle: t.Status.Status})
 				}
 				return items, "Tasks", ""
 			}
@@ -127,8 +140,13 @@ func (m dashboardModel) getRightPane() ([]ListItem, string, string) {
 
 	case DepthLists:
 		var items []ListItem
-		for _, t := range m.db.GetTasksByList(m.getHoveredListID()) {
-			items = append(items, ListItem{ID: string(t.Id), Name: t.Name, Type: "task", Subtitle: t.Status.Status})
+		tasks, depths := m.getSortedTasks(m.getHoveredListID()) // Use Tree
+		for i, t := range tasks {
+			name := t.Name
+			if depths[i] > 0 {
+				name = strings.Repeat("  ", depths[i]) + "↳ " + name
+			}
+			items = append(items, ListItem{ID: string(t.Id), Name: name, Type: "task", Subtitle: t.Status.Status})
 		}
 		return items, "Tasks", ""
 
@@ -339,7 +357,7 @@ func (m dashboardModel) getHoveredListID() string {
 }
 
 func (m dashboardModel) getHoveredTask() *clkup.Task {
-	tasks := m.db.GetTasksByList(m.getActiveListID())
+	tasks, _ := m.getSortedTasks(m.getActiveListID())
 	if m.cursorTask >= 0 && m.cursorTask < len(tasks) {
 		return &tasks[m.cursorTask]
 	}
@@ -830,4 +848,49 @@ func (s SyncInterval) Duration() time.Duration {
 	default:
 		return 0
 	}
+}
+
+func (m dashboardModel) getSortedTasks(listID string) ([]clkup.Task, []int) {
+	tasks := m.db.GetTasksByList(listID)
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+
+	taskExists := make(map[string]bool)
+	for _, t := range tasks {
+		taskExists[string(t.Id)] = true
+	}
+
+	childrenMap := make(map[string][]clkup.Task)
+	var roots []clkup.Task
+
+	for _, t := range tasks {
+		parentID := ""
+		if p, ok := t.Parent.(string); ok && p != "" {
+			parentID = p
+		}
+
+		if parentID == "" || !taskExists[parentID] {
+			roots = append(roots, t)
+		} else {
+			childrenMap[parentID] = append(childrenMap[parentID], t)
+		}
+	}
+
+	var sorted []clkup.Task
+	var depths []int
+
+	var flatten func(list []clkup.Task, depth int)
+	flatten = func(list []clkup.Task, depth int) {
+		for _, t := range list {
+			sorted = append(sorted, t)
+			depths = append(depths, depth)
+			if children, ok := childrenMap[string(t.Id)]; ok {
+				flatten(children, depth+1)
+			}
+		}
+	}
+
+	flatten(roots, 0)
+	return sorted, depths
 }
