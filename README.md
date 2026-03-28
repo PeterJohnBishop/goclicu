@@ -18,4 +18,4 @@
 - SHIFT+F to cycle auto-sync OFF, 5m, 15m, or 30m
 - q to quitchos
 
-![screenshot](https://github.com/PeterJohnBishop/super-duper-fortnight/blob/main/Assets/filemanager.png?raw=true)
+![screenshot](https://github.com/PeterJohnBishop/super-duper-fortnight/blob/main/Assets/task_example.png?raw=true)
