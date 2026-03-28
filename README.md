@@ -18,4 +18,10 @@
 - SHIFT+F to cycle auto-sync OFF, 5m, 15m, or 30m
 - q to quitchos
 
+Example of a task:
+
 ![screenshot](https://github.com/PeterJohnBishop/super-duper-fortnight/blob/main/Assets/task_example.png?raw=true)
+
+Example of the same task in raw JSON mode:
+
+![screenshot](https://github.com/PeterJohnBishop/super-duper-fortnight/blob/main/Assets/json_example.png?raw=true)
