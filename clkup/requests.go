@@ -478,3 +478,87 @@ func (c *APIClient) fetchPage(teamID string, page int) ([]Task, error) {
 
 	return tasksResponse.Task, nil
 }
+
+func (c *APIClient) UpdateTask(task_id string, body UpdateTaskBody) (Task, error) {
+	url := fmt.Sprintf("https://api.clickup.com/api/v2/task/%s", task_id)
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return Task{}, fmt.Errorf("failed to marshal update body: %w", err)
+	}
+
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return Task{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return Task{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBytes, _ := io.ReadAll(resp.Body)
+		return Task{}, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(respBytes))
+	}
+
+	var updatedTask Task
+	if err := json.NewDecoder(resp.Body).Decode(&updatedTask); err != nil {
+		return Task{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return updatedTask, nil
+}
+
+func (c *APIClient) DeleteTask(task_id string) error {
+	url := fmt.Sprintf("https://api.clickup.com/api/v2/task/%s", task_id)
+
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(respBytes))
+	}
+
+	return nil
+}
+
+func (c *APIClient) SetCustomField(taskID, fieldID string, payload SetCustomFieldPayload) error {
+	url := fmt.Sprintf("https://api.clickup.com/api/v2/task/%s/field/%s", taskID, fieldID)
+
+	jsonBody, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal custom field payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	// req.Header.Set("Authorization", c.APIKey)
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(respBytes))
+	}
+
+	return nil
+}

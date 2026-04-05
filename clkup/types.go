@@ -318,3 +318,38 @@ type Performance struct {
 	RPM      string
 	TPS      string
 }
+
+type UpdateTaskBody struct {
+	CustomItemID    int64                `json:"custom_item_id,omitempty"`
+	Name            string               `json:"name,omitempty"`
+	Description     string               `json:"description,omitempty"`
+	MarkdownContent string               `json:"markdown_content,omitempty"`
+	Status          string               `json:"status,omitempty"`
+	Priority        int64                `json:"priority,omitempty"`
+	DueDate         int64                `json:"due_date,omitempty"`
+	DueDateTime     bool                 `json:"due_date_time,omitempty"`
+	Parent          string               `json:"parent,omitempty"`
+	TimeEstimate    int64                `json:"time_estimate,omitempty"`
+	StartDate       int64                `json:"start_date,omitempty"`
+	StartDateTime   int64                `json:"start_date_time,omitempty"`
+	Points          int64                `json:"points,omitempty"`
+	Assignees       UpdateAssignees      `json:"assignees,omitempty"`
+	GroupAssignees  UpdateGroupAssignees `json:"group_assignees,omitempty"`
+	Watchers        UpdateAssignees      `json:"watchers,omitempty"`
+	Archived        bool                 `json:"archived,omitempty"`
+}
+
+type UpdateAssignees struct {
+	Add []int64 `json:"add,omitempty"`
+	Rem []int64 `json:"rem,omitempty"`
+}
+
+type UpdateGroupAssignees struct {
+	Add []string `json:"add,omitempty"`
+	Rem []string `json:"rem,omitempty"`
+}
+
+type SetCustomFieldPayload struct {
+	Value        any `json:"value"`
+	ValueOptions any `json:"value_options,omitempty"`
+}
