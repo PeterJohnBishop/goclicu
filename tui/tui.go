@@ -707,10 +707,8 @@ func (m dashboardModel) View() string {
 	var centerContent string
 
 	if m.showJSONPopup {
-		// Build the Modal Window
 		modalWidth := safeTextWidth - 4
 
-		// Modal Header text logic
 		headerText := "[ SHIFT+J: Close | SHIFT+S: Copy ]"
 		copiedStatus := ""
 		if m.jsonCopied {
@@ -722,12 +720,10 @@ func (m dashboardModel) View() string {
 
 		modalHeader := lipgloss.JoinHorizontal(lipgloss.Top, headerText, copiedStatus)
 
-		// Get your JSON data, split it into lines for scrolling
 		rawJSON := m.getCurrentJSON()
 		jsonLines := strings.Split(rawJSON, "\n")
 
-		// Handle scrolling limits
-		usableHeight := paneHeight - 3 // Account for header and borders
+		usableHeight := paneHeight - 3
 		if usableHeight < 1 {
 			usableHeight = 1
 		}
@@ -740,7 +736,6 @@ func (m dashboardModel) View() string {
 			m.jsonScrollOffset = maxScroll
 		}
 
-		// Slice the viewable lines
 		endIdx := m.jsonScrollOffset + usableHeight
 		if endIdx > len(jsonLines) {
 			endIdx = len(jsonLines)
@@ -751,22 +746,19 @@ func (m dashboardModel) View() string {
 			visibleJSON = strings.Join(jsonLines[m.jsonScrollOffset:endIdx], "\n")
 		}
 
-		// Style the Modal Body
 		modalStyle := lipgloss.NewStyle().
 			Width(modalWidth).
-			Height(paneHeight-1). // Account for the header text we place above it
+			Height(paneHeight-2).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#9D4EDD")).
 			Padding(0, 1)
 
-		// Stack the header text outside on top of the modal box
 		centerContent = lipgloss.JoinVertical(lipgloss.Center,
 			lipgloss.NewStyle().Width(modalWidth).Align(lipgloss.Center).Render(modalHeader),
 			modalStyle.Render(visibleJSON),
 		)
 
 	} else {
-		// Use standard split panes when popup is closed
 		splitPanes := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 		centerContent = splitPanes
 	}
