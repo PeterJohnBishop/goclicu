@@ -161,11 +161,11 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "Rebuilding database..."
 				return m, resetDatabaseCmd(m.db)
 			case "n", "N", "esc":
-				m.state = stateLoaded // Or return to previous state
+				m.state = stateLoaded
 				return m, nil
 			}
 		}
-		return m, nil // Block other inputs while confirming
+		return m, nil
 	}
 
 	switch msg := msg.(type) {
@@ -646,15 +646,15 @@ func (m dashboardModel) View() string {
 	logContent := strings.Join(safeLogs, "\n")
 	bottomPane := logBoxStyle.Render(lipgloss.JoinVertical(lipgloss.Left, logTitle, logContent))
 
-	helpStr := "Nav: h j k l | Back: esc | Select: enter | JSON: Shift+J | Sync: r | Cycle Auto-Sync: SHIFT+F | Open: o | Quit: q"
+	helpStr := "Nav: h j k l | Back: esc | Select: enter | JSON: Shift+J | Sync: r | Cycle Auto-Sync: SHIFT+F | Open: o | Quit: q | Reset Database: CTRL+X"
 
 	if lipgloss.Width(helpStr) > safeTextWidth {
 		// Medium width fallback
-		helpStr = "Nav: hjkl | esc: back | enter: sel | J: json | r: sync | F: auto-sync | o: open | q: quit"
+		helpStr = "Nav: hjkl | esc: back | enter: sel | J: json | r: sync | F: auto-sync | o: open | q: quit | ctrl+x: reset data"
 
 		if lipgloss.Width(helpStr) > safeTextWidth {
 			// Small width fallback
-			helpStr = "hjkl:nav | esc:back | enter:sel | J:json | r:sync | F:auto-sync | o:web | q:quit"
+			helpStr = "hjkl:nav | esc:back | enter:sel | J:json | r:sync | F:auto-sync | o:web | q:quit | ctrl+x:reset"
 
 			if lipgloss.Width(helpStr) > safeTextWidth {
 				// Extreme squish fallback
